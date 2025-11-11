@@ -3,7 +3,6 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
-local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -33,8 +32,8 @@ local Settings = {
     ESP = {
         Enabled = true,
         TeamCheck = true,
-        MaxDistance = 200,
-        FontSize = 9,
+        MaxDistance = 1000,
+        FontSize = 13,
         Drawing = {
             Names = {
                 Enabled = true,
@@ -50,7 +49,7 @@ local Settings = {
             },
             Healthbar = {
                 Enabled = true,  
-                Width = 2,
+                Width = 3,
                 Color = Color3.fromRGB(0, 255, 0),
             },
             Boxes = {
@@ -108,178 +107,187 @@ local Originals = {
     GetModifiedData = ModifyData.getModifiedData
 }
 
--- ESP Functions
-local function CreateESPObject(Player)
-    local Name = Drawing.new("Text")
-    Name.Visible = false
-    Name.Center = true
-    Name.Outline = true
-    Name.Font = 2
-    Name.Size = Settings.ESP.FontSize
-    Name.Color = Settings.ESP.Drawing.Names.Color
+-- Simple ESP using Drawing API
+local ESPDrawings = {}
 
-    local Distance = Drawing.new("Text")
-    Distance.Visible = false
-    Distance.Center = true
-    Distance.Outline = true
-    Distance.Font = 2
-    Distance.Size = Settings.ESP.FontSize
-    Distance.Color = Settings.ESP.Drawing.Distance.Color
-
-    local Weapon = Drawing.new("Text")
-    Weapon.Visible = false
-    Weapon.Center = true
-    Weapon.Outline = true
-    Weapon.Font = 2
-    Weapon.Size = Settings.ESP.FontSize
-    Weapon.Color = Settings.ESP.Drawing.Weapons.Color
-
-    local Box = Drawing.new("Square")
-    Box.Visible = false
-    Box.Thickness = 1
-    Box.Filled = false
-    Box.Color = Settings.ESP.Drawing.Boxes.Color
-
-    local HealthBarOutline = Drawing.new("Square")
-    HealthBarOutline.Visible = false
-    HealthBarOutline.Thickness = 1
-    HealthBarOutline.Filled = false
-    HealthBarOutline.Color = Color3.new(0, 0, 0)
-
-    local HealthBar = Drawing.new("Square")
-    HealthBar.Visible = false
-    HealthBar.Thickness = 1
-    HealthBar.Filled = true
-    HealthBar.Color = Settings.ESP.Drawing.Healthbar.Color
-
-    local Objects = {
-        Name = Name,
-        Distance = Distance,
-        Weapon = Weapon,
-        Box = Box,
-        HealthBarOutline = HealthBarOutline,
-        HealthBar = HealthBar,
-        Player = Player
+local function CreateESP(Player)
+    ESPDrawings[Player] = {
+        Box = Drawing.new("Square"),
+        BoxFill = Drawing.new("Square"),
+        Name = Drawing.new("Text"),
+        Distance = Drawing.new("Text"),
+        Weapon = Drawing.new("Text"),
+        HealthBar = Drawing.new("Square"),
+        HealthBarBackground = Drawing.new("Square")
     }
-
-    return Objects
+    
+    local drawings = ESPDrawings[Player]
+    
+    -- Box
+    drawings.Box.Thickness = 2
+    drawings.Box.Filled = false
+    drawings.Box.Color = Settings.ESP.Drawing.Boxes.Color
+    drawings.Box.Visible = false
+    
+    -- Box Fill
+    drawings.BoxFill.Thickness = 1
+    drawings.BoxFill.Filled = true
+    drawings.BoxFill.Color = Color3.new(0, 0, 0)
+    drawings.BoxFill.Transparency = 0.5
+    drawings.BoxFill.Visible = false
+    
+    -- Name
+    drawings.Name.Size = Settings.ESP.FontSize
+    drawings.Name.Center = true
+    drawings.Name.Outline = true
+    drawings.Name.Color = Settings.ESP.Drawing.Names.Color
+    drawings.Name.Visible = false
+    
+    -- Distance
+    drawings.Distance.Size = Settings.ESP.FontSize
+    drawings.Distance.Center = true
+    drawings.Distance.Outline = true
+    drawings.Distance.Color = Settings.ESP.Drawing.Distance.Color
+    drawings.Distance.Visible = false
+    
+    -- Weapon
+    drawings.Weapon.Size = Settings.ESP.FontSize
+    drawings.Weapon.Center = true
+    drawings.Weapon.Outline = true
+    drawings.Weapon.Color = Settings.ESP.Drawing.Weapons.Color
+    drawings.Weapon.Visible = false
+    
+    -- Health Bar
+    drawings.HealthBar.Thickness = 1
+    drawings.HealthBar.Filled = true
+    drawings.HealthBar.Color = Settings.ESP.Drawing.Healthbar.Color
+    drawings.HealthBar.Visible = false
+    
+    -- Health Bar Background
+    drawings.HealthBarBackground.Thickness = 1
+    drawings.HealthBarBackground.Filled = true
+    drawings.HealthBarBackground.Color = Color3.new(0, 0, 0)
+    drawings.HealthBarBackground.Visible = false
+    
+    return drawings
 end
-
-local ESPObjects = {}
 
 local function UpdateESP()
     if not Settings.ESP.Enabled then
-        for _, esp in pairs(ESPObjects) do
-            for _, drawing in pairs(esp) do
-                if drawing ~= esp.Player then
-                    drawing.Visible = false
-                end
+        for _, drawings in pairs(ESPDrawings) do
+            for _, drawing in pairs(drawings) do
+                drawing.Visible = false
             end
         end
         return
     end
-
-    for _, esp in pairs(ESPObjects) do
-        local Player = esp.Player
-        local Character = Player.Character
-        local RootPart = Character and Character:FindFirstChild("HumanoidRootPart")
-        local Humanoid = Character and Character:FindFirstChild("Humanoid")
-
-        if not (RootPart and Humanoid and Player ~= LocalPlayer) then
-            for _, drawing in pairs(esp) do
-                if drawing ~= esp.Player then
-                    drawing.Visible = false
-                end
+    
+    for Player, drawings in pairs(ESPDrawings) do
+        if not Player or Player == LocalPlayer then
+            for _, drawing in pairs(drawings) do
+                drawing.Visible = false
             end
             continue
         end
-
+        
+        local Character = Player.Character
+        if not Character then
+            for _, drawing in pairs(drawings) do
+                drawing.Visible = false
+            end
+            continue
+        end
+        
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+        
+        if not Humanoid or not HumanoidRootPart then
+            for _, drawing in pairs(drawings) do
+                drawing.Visible = false
+            end
+            continue
+        end
+        
         -- Team check
         if Settings.ESP.TeamCheck and Player.Team == LocalPlayer.Team then
-            for _, drawing in pairs(esp) do
-                if drawing ~= esp.Player then
-                    drawing.Visible = false
-                end
+            for _, drawing in pairs(drawings) do
+                drawing.Visible = false
             end
             continue
         end
-
-        local Pos, OnScreen = Camera:WorldToViewportPoint(RootPart.Position)
-        local Distance = (Camera.CFrame.Position - RootPart.Position).Magnitude
-
+        
+        local Position, OnScreen = Camera:WorldToViewportPoint(HumanoidRootPart.Position)
+        local Distance = (Camera.CFrame.Position - HumanoidRootPart.Position).Magnitude
+        
         if not OnScreen or Distance > Settings.ESP.MaxDistance then
-            for _, drawing in pairs(esp) do
-                if drawing ~= esp.Player then
-                    drawing.Visible = false
-                end
+            for _, drawing in pairs(drawings) do
+                drawing.Visible = false
             end
             continue
         end
-
-        -- Calculate box size
-        local Size = RootPart.Size.Y
-        local ScaleFactor = 1 / (Pos.Z * 0.1)
-        local Width = 50 * ScaleFactor
-        local Height = 80 * ScaleFactor
-
+        
+        -- Calculate box size based on distance
+        local Scale = 1200 / Distance
+        local Width = 4 * Scale
+        local Height = 6 * Scale
+        
         -- Box
         if Settings.ESP.Drawing.Boxes.Enabled then
-            esp.Box.Size = Vector2.new(Width, Height)
-            esp.Box.Position = Vector2.new(Pos.X - Width/2, Pos.Y - Height/2)
-            esp.Box.Visible = true
-            esp.Box.Color = Settings.ESP.Drawing.Boxes.Color
+            drawings.Box.Size = Vector2.new(Width, Height)
+            drawings.Box.Position = Vector2.new(Position.X - Width/2, Position.Y - Height/2)
+            drawings.Box.Visible = true
+            
+            drawings.BoxFill.Size = Vector2.new(Width, Height)
+            drawings.BoxFill.Position = Vector2.new(Position.X - Width/2, Position.Y - Height/2)
+            drawings.BoxFill.Visible = true
         else
-            esp.Box.Visible = false
+            drawings.Box.Visible = false
+            drawings.BoxFill.Visible = false
         end
-
-        -- Health bar
+        
+        -- Health Bar
         if Settings.ESP.Drawing.Healthbar.Enabled then
             local HealthPercent = Humanoid.Health / Humanoid.MaxHealth
             local BarHeight = Height * HealthPercent
-            local BarWidth = Settings.ESP.Drawing.Healthbar.Width
             
-            esp.HealthBarOutline.Size = Vector2.new(BarWidth + 2, Height + 2)
-            esp.HealthBarOutline.Position = Vector2.new(Pos.X - Width/2 - BarWidth - 3, Pos.Y - Height/2 - 1)
-            esp.HealthBarOutline.Visible = true
+            drawings.HealthBarBackground.Size = Vector2.new(Settings.ESP.Drawing.Healthbar.Width + 2, Height + 2)
+            drawings.HealthBarBackground.Position = Vector2.new(Position.X - Width/2 - Settings.ESP.Drawing.Healthbar.Width - 4, Position.Y - Height/2 - 1)
+            drawings.HealthBarBackground.Visible = true
             
-            esp.HealthBar.Size = Vector2.new(BarWidth, BarHeight)
-            esp.HealthBar.Position = Vector2.new(Pos.X - Width/2 - BarWidth - 2, Pos.Y - Height/2 + (Height - BarHeight))
-            esp.HealthBar.Visible = true
-            esp.HealthBar.Color = Settings.ESP.Drawing.Healthbar.Color
+            drawings.HealthBar.Size = Vector2.new(Settings.ESP.Drawing.Healthbar.Width, BarHeight)
+            drawings.HealthBar.Position = Vector2.new(Position.X - Width/2 - Settings.ESP.Drawing.Healthbar.Width - 3, Position.Y - Height/2 + (Height - BarHeight))
+            drawings.HealthBar.Visible = true
         else
-            esp.HealthBarOutline.Visible = false
-            esp.HealthBar.Visible = false
+            drawings.HealthBar.Visible = false
+            drawings.HealthBarBackground.Visible = false
         end
-
+        
         -- Name
         if Settings.ESP.Drawing.Names.Enabled then
-            esp.Name.Text = Player.Name
-            esp.Name.Position = Vector2.new(Pos.X, Pos.Y - Height/2 - 15)
-            esp.Name.Visible = true
-            esp.Name.Color = Settings.ESP.Drawing.Names.Color
+            drawings.Name.Text = Player.Name
+            drawings.Name.Position = Vector2.new(Position.X, Position.Y - Height/2 - 20)
+            drawings.Name.Visible = true
         else
-            esp.Name.Visible = false
+            drawings.Name.Visible = false
         end
-
+        
         -- Distance
         if Settings.ESP.Drawing.Distance.Enabled then
-            esp.Distance.Text = string.format("%d studs", math.floor(Distance))
-            esp.Distance.Position = Vector2.new(Pos.X, Pos.Y + Height/2 + 5)
-            esp.Distance.Visible = true
-            esp.Distance.Color = Settings.ESP.Drawing.Distance.Color
+            drawings.Distance.Text = string.format("[%d]", math.floor(Distance))
+            drawings.Distance.Position = Vector2.new(Position.X, Position.Y + Height/2 + 5)
+            drawings.Distance.Visible = true
         else
-            esp.Distance.Visible = false
+            drawings.Distance.Visible = false
         end
-
+        
         -- Weapon
         if Settings.ESP.Drawing.Weapons.Enabled then
             local Tool = Character:FindFirstChildOfClass("Tool")
-            esp.Weapon.Text = Tool and Tool.Name or "Fists"
-            esp.Weapon.Position = Vector2.new(Pos.X, Pos.Y + Height/2 + 20)
-            esp.Weapon.Visible = true
-            esp.Weapon.Color = Settings.ESP.Drawing.Weapons.Color
+            drawings.Weapon.Text = Tool and Tool.Name or "Fists"
+            drawings.Weapon.Position = Vector2.new(Position.X, Position.Y + Height/2 + 20)
+            drawings.Weapon.Visible = true
         else
-            esp.Weapon.Visible = false
+            drawings.Weapon.Visible = false
         end
     end
 end
@@ -287,22 +295,22 @@ end
 -- Initialize ESP for all players
 for _, Player in pairs(Players:GetPlayers()) do
     if Player ~= LocalPlayer then
-        ESPObjects[Player] = CreateESPObject(Player)
+        ESPDrawings[Player] = CreateESP(Player)
     end
 end
 
 Players.PlayerAdded:Connect(function(Player)
-    ESPObjects[Player] = CreateESPObject(Player)
+    if Player ~= LocalPlayer then
+        ESPDrawings[Player] = CreateESP(Player)
+    end
 end)
 
 Players.PlayerRemoving:Connect(function(Player)
-    if ESPObjects[Player] then
-        for _, drawing in pairs(ESPObjects[Player]) do
-            if drawing ~= ESPObjects[Player].Player then
-                drawing:Remove()
-            end
+    if ESPDrawings[Player] then
+        for _, drawing in pairs(ESPDrawings[Player]) do
+            drawing:Remove()
         end
-        ESPObjects[Player] = nil
+        ESPDrawings[Player] = nil
     end
 end)
 
