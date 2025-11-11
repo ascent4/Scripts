@@ -28,6 +28,13 @@ local Settings = {
     },
     Movement = {
         NoFallDamage = true
+    },
+    Visuals = {
+        BulletTracers = true,
+        TracerColor = Color3.new(1, 0, 0),
+        TracerTransparency = 0.3,
+        TracerDuration = 2,
+        TracerTexture = "http://www.roblox.com/asset/?id=9150663556"
     }
 }
 
@@ -77,6 +84,80 @@ local Originals = {
     Step = CameraObject.step,
     GetModifiedData = ModifyData.getModifiedData
 }
+
+-- Bullet Tracer Functions
+local function CreateBeamTracer(startPos, endPos)
+    if not Settings.Visuals.BulletTracers then return end
+    
+    local distance = (startPos - endPos).Magnitude
+    local middle = (startPos + endPos) / 2
+    
+    local beam = Instance.new("Part")
+    beam.Material = Enum.Material.Neon
+    beam.Color = Settings.Visuals.TracerColor
+    beam.Transparency = Settings.Visuals.TracerTransparency
+    beam.Anchored = true
+    beam.CanCollide = false
+    beam.Size = Vector3.new(0.2, 0.2, distance)
+    beam.CFrame = CFrame.lookAt(middle, endPos)
+    
+    -- Apply texture
+    local texture = Instance.new("Texture")
+    texture.Texture = Settings.Visuals.TracerTexture
+    texture.Face = Enum.NormalId.Front
+    texture.StudsPerTileU = 2
+    texture.StudsPerTileV = distance / 2
+    texture.Parent = beam
+    
+    beam.Parent = Workspace
+    
+    -- Fade out and destroy
+    task.delay(Settings.Visuals.TracerDuration, function()
+        local fadeSteps = 10
+        local fadeInterval = Settings.Visuals.TracerDuration / fadeSteps
+        
+        for i = 1, fadeSteps do
+            beam.Transparency = beam.Transparency + (1 - Settings.Visuals.TracerTransparency) / fadeSteps
+            task.wait(fadeInterval)
+        end
+        
+        beam:Destroy()
+    end)
+    
+    return beam
+end
+
+local function SimulateBulletPath(origin, velocity, steps)
+    local frames = {}
+    local currentPos = origin
+    local currentVel = velocity
+    local gravity = Vector3.new(0, -Workspace.Gravity, 0)
+    local timeStep = 0.05
+    
+    for i = 1, steps do
+        local motion = (timeStep * currentVel) + ((timeStep * timeStep) / 2) * gravity
+        local newPos = currentPos + motion
+        local newVel = currentVel + (timeStep * gravity)
+        
+        -- Check for collision
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {Workspace.Terrain, Workspace.Ignore, Workspace.Players, Camera}
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        
+        local hit = Workspace:Raycast(currentPos, motion, raycastParams)
+        
+        if hit then
+            table.insert(frames, {currentPos, hit.Position})
+            break
+        else
+            table.insert(frames, {currentPos, newPos})
+            currentPos = newPos
+            currentVel = newVel
+        end
+    end
+    
+    return frames
+end
 
 -- Silent Aim Functions
 local function ComplexTrajectory(o, a, t, s, e)
@@ -228,6 +309,14 @@ function BulletObject.new(bulletData)
                 local velocity = ComplexTrajectory(bulletData.position, bulletData.acceleration, target, bulletData.velocity.Magnitude, Vector3.zero)
                 bulletData.velocity = velocity
             end
+        end
+    end
+    
+    -- Create bullet tracers
+    if Settings.Visuals.BulletTracers then
+        local frames = SimulateBulletPath(bulletData.position, bulletData.velocity, 20)
+        for _, frame in ipairs(frames) do
+            CreateBeamTracer(frame[1], frame[2])
         end
     end
     
