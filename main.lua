@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
+local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -29,12 +30,34 @@ local Settings = {
     Movement = {
         NoFallDamage = true
     },
-    Visuals = {
-        BulletTracers = true,
-        TracerColor = Color3.new(1, 0, 0),
-        TracerTransparency = 0.3,
-        TracerDuration = 2,
-        TracerTexture = "http://www.roblox.com/asset/?id=9150663556"
+    ESP = {
+        Enabled = true,
+        TeamCheck = true,
+        MaxDistance = 200,
+        FontSize = 9,
+        Drawing = {
+            Names = {
+                Enabled = true,
+                Color = Color3.fromRGB(255, 255, 255),
+            },
+            Distance = {
+                Enabled = true, 
+                Color = Color3.fromRGB(255, 255, 255),
+            },
+            Weapons = {
+                Enabled = true, 
+                Color = Color3.fromRGB(255, 255, 255),
+            },
+            Healthbar = {
+                Enabled = true,  
+                Width = 2,
+                Color = Color3.fromRGB(0, 255, 0),
+            },
+            Boxes = {
+                Enabled = true,
+                Color = Color3.fromRGB(255, 0, 0),
+            }
+        }
     }
 }
 
@@ -85,79 +108,206 @@ local Originals = {
     GetModifiedData = ModifyData.getModifiedData
 }
 
--- Bullet Tracer Functions
-local function CreateBeamTracer(startPos, endPos)
-    if not Settings.Visuals.BulletTracers then return end
-    
-    local distance = (startPos - endPos).Magnitude
-    local middle = (startPos + endPos) / 2
-    
-    local beam = Instance.new("Part")
-    beam.Material = Enum.Material.Neon
-    beam.Color = Settings.Visuals.TracerColor
-    beam.Transparency = Settings.Visuals.TracerTransparency
-    beam.Anchored = true
-    beam.CanCollide = false
-    beam.Size = Vector3.new(0.2, 0.2, distance)
-    beam.CFrame = CFrame.lookAt(middle, endPos)
-    
-    -- Apply texture
-    local texture = Instance.new("Texture")
-    texture.Texture = Settings.Visuals.TracerTexture
-    texture.Face = Enum.NormalId.Front
-    texture.StudsPerTileU = 2
-    texture.StudsPerTileV = distance / 2
-    texture.Parent = beam
-    
-    beam.Parent = Workspace
-    
-    -- Fade out and destroy
-    task.delay(Settings.Visuals.TracerDuration, function()
-        local fadeSteps = 10
-        local fadeInterval = Settings.Visuals.TracerDuration / fadeSteps
-        
-        for i = 1, fadeSteps do
-            beam.Transparency = beam.Transparency + (1 - Settings.Visuals.TracerTransparency) / fadeSteps
-            task.wait(fadeInterval)
-        end
-        
-        beam:Destroy()
-    end)
-    
-    return beam
+-- ESP Functions
+local function CreateESPObject(Player)
+    local Name = Drawing.new("Text")
+    Name.Visible = false
+    Name.Center = true
+    Name.Outline = true
+    Name.Font = 2
+    Name.Size = Settings.ESP.FontSize
+    Name.Color = Settings.ESP.Drawing.Names.Color
+
+    local Distance = Drawing.new("Text")
+    Distance.Visible = false
+    Distance.Center = true
+    Distance.Outline = true
+    Distance.Font = 2
+    Distance.Size = Settings.ESP.FontSize
+    Distance.Color = Settings.ESP.Drawing.Distance.Color
+
+    local Weapon = Drawing.new("Text")
+    Weapon.Visible = false
+    Weapon.Center = true
+    Weapon.Outline = true
+    Weapon.Font = 2
+    Weapon.Size = Settings.ESP.FontSize
+    Weapon.Color = Settings.ESP.Drawing.Weapons.Color
+
+    local Box = Drawing.new("Square")
+    Box.Visible = false
+    Box.Thickness = 1
+    Box.Filled = false
+    Box.Color = Settings.ESP.Drawing.Boxes.Color
+
+    local HealthBarOutline = Drawing.new("Square")
+    HealthBarOutline.Visible = false
+    HealthBarOutline.Thickness = 1
+    HealthBarOutline.Filled = false
+    HealthBarOutline.Color = Color3.new(0, 0, 0)
+
+    local HealthBar = Drawing.new("Square")
+    HealthBar.Visible = false
+    HealthBar.Thickness = 1
+    HealthBar.Filled = true
+    HealthBar.Color = Settings.ESP.Drawing.Healthbar.Color
+
+    local Objects = {
+        Name = Name,
+        Distance = Distance,
+        Weapon = Weapon,
+        Box = Box,
+        HealthBarOutline = HealthBarOutline,
+        HealthBar = HealthBar,
+        Player = Player
+    }
+
+    return Objects
 end
 
-local function SimulateBulletPath(origin, velocity, steps)
-    local frames = {}
-    local currentPos = origin
-    local currentVel = velocity
-    local gravity = Vector3.new(0, -Workspace.Gravity, 0)
-    local timeStep = 0.05
-    
-    for i = 1, steps do
-        local motion = (timeStep * currentVel) + ((timeStep * timeStep) / 2) * gravity
-        local newPos = currentPos + motion
-        local newVel = currentVel + (timeStep * gravity)
-        
-        -- Check for collision
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterDescendantsInstances = {Workspace.Terrain, Workspace.Ignore, Workspace.Players, Camera}
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        
-        local hit = Workspace:Raycast(currentPos, motion, raycastParams)
-        
-        if hit then
-            table.insert(frames, {currentPos, hit.Position})
-            break
+local ESPObjects = {}
+
+local function UpdateESP()
+    if not Settings.ESP.Enabled then
+        for _, esp in pairs(ESPObjects) do
+            for _, drawing in pairs(esp) do
+                if drawing ~= esp.Player then
+                    drawing.Visible = false
+                end
+            end
+        end
+        return
+    end
+
+    for _, esp in pairs(ESPObjects) do
+        local Player = esp.Player
+        local Character = Player.Character
+        local RootPart = Character and Character:FindFirstChild("HumanoidRootPart")
+        local Humanoid = Character and Character:FindFirstChild("Humanoid")
+
+        if not (RootPart and Humanoid and Player ~= LocalPlayer) then
+            for _, drawing in pairs(esp) do
+                if drawing ~= esp.Player then
+                    drawing.Visible = false
+                end
+            end
+            continue
+        end
+
+        -- Team check
+        if Settings.ESP.TeamCheck and Player.Team == LocalPlayer.Team then
+            for _, drawing in pairs(esp) do
+                if drawing ~= esp.Player then
+                    drawing.Visible = false
+                end
+            end
+            continue
+        end
+
+        local Pos, OnScreen = Camera:WorldToViewportPoint(RootPart.Position)
+        local Distance = (Camera.CFrame.Position - RootPart.Position).Magnitude
+
+        if not OnScreen or Distance > Settings.ESP.MaxDistance then
+            for _, drawing in pairs(esp) do
+                if drawing ~= esp.Player then
+                    drawing.Visible = false
+                end
+            end
+            continue
+        end
+
+        -- Calculate box size
+        local Size = RootPart.Size.Y
+        local ScaleFactor = 1 / (Pos.Z * 0.1)
+        local Width = 50 * ScaleFactor
+        local Height = 80 * ScaleFactor
+
+        -- Box
+        if Settings.ESP.Drawing.Boxes.Enabled then
+            esp.Box.Size = Vector2.new(Width, Height)
+            esp.Box.Position = Vector2.new(Pos.X - Width/2, Pos.Y - Height/2)
+            esp.Box.Visible = true
+            esp.Box.Color = Settings.ESP.Drawing.Boxes.Color
         else
-            table.insert(frames, {currentPos, newPos})
-            currentPos = newPos
-            currentVel = newVel
+            esp.Box.Visible = false
+        end
+
+        -- Health bar
+        if Settings.ESP.Drawing.Healthbar.Enabled then
+            local HealthPercent = Humanoid.Health / Humanoid.MaxHealth
+            local BarHeight = Height * HealthPercent
+            local BarWidth = Settings.ESP.Drawing.Healthbar.Width
+            
+            esp.HealthBarOutline.Size = Vector2.new(BarWidth + 2, Height + 2)
+            esp.HealthBarOutline.Position = Vector2.new(Pos.X - Width/2 - BarWidth - 3, Pos.Y - Height/2 - 1)
+            esp.HealthBarOutline.Visible = true
+            
+            esp.HealthBar.Size = Vector2.new(BarWidth, BarHeight)
+            esp.HealthBar.Position = Vector2.new(Pos.X - Width/2 - BarWidth - 2, Pos.Y - Height/2 + (Height - BarHeight))
+            esp.HealthBar.Visible = true
+            esp.HealthBar.Color = Settings.ESP.Drawing.Healthbar.Color
+        else
+            esp.HealthBarOutline.Visible = false
+            esp.HealthBar.Visible = false
+        end
+
+        -- Name
+        if Settings.ESP.Drawing.Names.Enabled then
+            esp.Name.Text = Player.Name
+            esp.Name.Position = Vector2.new(Pos.X, Pos.Y - Height/2 - 15)
+            esp.Name.Visible = true
+            esp.Name.Color = Settings.ESP.Drawing.Names.Color
+        else
+            esp.Name.Visible = false
+        end
+
+        -- Distance
+        if Settings.ESP.Drawing.Distance.Enabled then
+            esp.Distance.Text = string.format("%d studs", math.floor(Distance))
+            esp.Distance.Position = Vector2.new(Pos.X, Pos.Y + Height/2 + 5)
+            esp.Distance.Visible = true
+            esp.Distance.Color = Settings.ESP.Drawing.Distance.Color
+        else
+            esp.Distance.Visible = false
+        end
+
+        -- Weapon
+        if Settings.ESP.Drawing.Weapons.Enabled then
+            local Tool = Character:FindFirstChildOfClass("Tool")
+            esp.Weapon.Text = Tool and Tool.Name or "Fists"
+            esp.Weapon.Position = Vector2.new(Pos.X, Pos.Y + Height/2 + 20)
+            esp.Weapon.Visible = true
+            esp.Weapon.Color = Settings.ESP.Drawing.Weapons.Color
+        else
+            esp.Weapon.Visible = false
         end
     end
-    
-    return frames
 end
+
+-- Initialize ESP for all players
+for _, Player in pairs(Players:GetPlayers()) do
+    if Player ~= LocalPlayer then
+        ESPObjects[Player] = CreateESPObject(Player)
+    end
+end
+
+Players.PlayerAdded:Connect(function(Player)
+    ESPObjects[Player] = CreateESPObject(Player)
+end)
+
+Players.PlayerRemoving:Connect(function(Player)
+    if ESPObjects[Player] then
+        for _, drawing in pairs(ESPObjects[Player]) do
+            if drawing ~= ESPObjects[Player].Player then
+                drawing:Remove()
+            end
+        end
+        ESPObjects[Player] = nil
+    end
+end)
+
+-- Update ESP every frame
+RunService.RenderStepped:Connect(UpdateESP)
 
 -- Silent Aim Functions
 local function ComplexTrajectory(o, a, t, s, e)
@@ -309,14 +459,6 @@ function BulletObject.new(bulletData)
                 local velocity = ComplexTrajectory(bulletData.position, bulletData.acceleration, target, bulletData.velocity.Magnitude, Vector3.zero)
                 bulletData.velocity = velocity
             end
-        end
-    end
-    
-    -- Create bullet tracers
-    if Settings.Visuals.BulletTracers then
-        local frames = SimulateBulletPath(bulletData.position, bulletData.velocity, 20)
-        for _, frame in ipairs(frames) do
-            CreateBeamTracer(frame[1], frame[2])
         end
     end
     
