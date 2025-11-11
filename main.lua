@@ -31,7 +31,7 @@ local Settings = {
     },
     ESP = {
         Enabled = true,
-        TeamCheck = true,
+        TeamCheck = false,
         MaxDistance = 1000,
         FontSize = 13,
         Drawing = {
