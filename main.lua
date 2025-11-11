@@ -12,8 +12,12 @@ local Settings = {
         Enabled = true,
         FOV = 300,
         HitChance = 100,
-        HeadshotChance = 50,
-        VisibleCheck = false
+        Hitbox = "Head", -- Head, Torso, Random
+        VisibleCheck = false,
+        ShowFOV = true,
+        FOVColor = Color3.new(1, 1, 1),
+        FOVThickness = 1,
+        FOVFilled = false
     },
     GunMods = {
         NoRecoil = true,
@@ -26,6 +30,16 @@ local Settings = {
         NoFallDamage = true
     }
 }
+
+-- Create FOV Circle
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Color = Settings.SilentAim.FOVColor
+FOVCircle.Radius = Settings.SilentAim.FOV
+FOVCircle.NumSides = 48
+FOVCircle.Visible = Settings.SilentAim.ShowFOV
+FOVCircle.Thickness = Settings.SilentAim.FOVThickness
+FOVCircle.Filled = Settings.SilentAim.FOVFilled
+FOVCircle.Transparency = 1
 
 -- Get modules
 local function GetModules()
@@ -130,28 +144,54 @@ local function ComplexTrajectory(o, a, t, s, e)
     return v, x
 end
 
-local function GetClosestTarget(origin, partName)
+local function GetHitboxPart()
+    if Settings.SilentAim.Hitbox == "Head" then
+        return "Head"
+    elseif Settings.SilentAim.Hitbox == "Torso" then
+        return "Torso"
+    elseif Settings.SilentAim.Hitbox == "Random" then
+        return math.random(1, 2) == 1 and "Head" or "Torso"
+    end
+    return "Head" -- Default fallback
+end
+
+local function GetClosestTarget(origin)
     local distance = Settings.SilentAim.FOV
     local position, closestPlayer, part
 
     ReplicationInterface.operateOnAllEntries(function(player, entry)
         local character = entry._thirdPersonObject and entry._thirdPersonObject._characterModelHash
         if character and player.Team ~= LocalPlayer.Team then
-            local target = character[partName].Position
-            local screenPosition = Camera:WorldToViewportPoint(target)
-            local screenDistance = (Vector2.new(screenPosition.X, screenPosition.Y) - origin).Magnitude
+            local hitbox = GetHitboxPart()
+            local targetPart = character[hitbox]
+            
+            if targetPart then
+                local target = targetPart.Position
+                local screenPosition = Camera:WorldToViewportPoint(target)
+                local screenDistance = (Vector2.new(screenPosition.X, screenPosition.Y) - origin).Magnitude
 
-            if screenPosition.Z > 0 and screenDistance < distance then
-                part = character[partName]
-                position = target
-                distance = screenDistance
-                closestPlayer = entry
+                if screenPosition.Z > 0 and screenDistance < distance then
+                    part = targetPart
+                    position = target
+                    distance = screenDistance
+                    closestPlayer = entry
+                end
             end
         end
     end)
 
     return position, closestPlayer, part
 end
+
+-- Update FOV Circle
+RunService.RenderStepped:Connect(function()
+    FOVCircle.Position = Camera.ViewportSize * 0.5
+    FOVCircle.Radius = Settings.SilentAim.FOV
+    FOVCircle.Visible = Settings.SilentAim.ShowFOV
+    FOVCircle.Color = Settings.SilentAim.FOVColor
+    FOVCircle.Thickness = Settings.SilentAim.FOVThickness
+    FOVCircle.Filled = Settings.SilentAim.FOVFilled
+end)
 
 -- Silent Aim Hooks
 function Network.send(self, name, ...)
@@ -163,8 +203,7 @@ function Network.send(self, name, ...)
         local uniqueId, bulletData, time = ...
         
         if Settings.SilentAim.HitChance >= math.random(1, 100) then
-            local partName = Settings.SilentAim.HeadshotChance >= math.random(1, 100) and "Head" or "Torso"
-            local target = GetClosestTarget(Camera.ViewportSize * 0.5, partName)
+            local target = GetClosestTarget(Camera.ViewportSize * 0.5)
 
             if target then
                 local weapon = WeaponInterface.getActiveWeaponController():getActiveWeapon()
@@ -183,8 +222,7 @@ end
 function BulletObject.new(bulletData)
     if bulletData.onplayerhit and Settings.SilentAim.Enabled then
         if Settings.SilentAim.HitChance >= math.random(1, 100) then
-            local partName = Settings.SilentAim.HeadshotChance >= math.random(1, 100) and "Head" or "Torso"
-            local target = GetClosestTarget(Camera.ViewportSize * 0.5, partName)
+            local target = GetClosestTarget(Camera.ViewportSize * 0.5)
 
             if target then
                 local velocity = ComplexTrajectory(bulletData.position, bulletData.acceleration, target, bulletData.velocity.Magnitude, Vector3.zero)
